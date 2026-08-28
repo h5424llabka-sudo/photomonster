@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.location.Geocoder
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -23,7 +24,7 @@ data class MapUiState(
     val photos: List<PhotoLocation> = emptyList(),
     val selectedPhoto: PhotoLocation? = null,
     val isLoading: Boolean = false,
-    val skippedCount: Int = 0,     // GPS なしでスキップした枚数
+    val skippedCount: Int = 0,
     val errorMessage: String? = null
 )
 
@@ -32,12 +33,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
 
-    /**
-     * Photo Picker で選択した URI リストを処理する
-     * ・EXIF から GPS を抽出
-     * ・GPS なし写真はスキップカウントして除外
-     * ・GPS あり写真は逆ジオコーディングで住所を付与
-     */
     fun processSelectedUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
@@ -49,19 +44,19 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
             withContext(Dispatchers.IO) {
                 for (uri in uris) {
-                    val latLng = extractLatLng(context, uri)
-                    if (latLng == null) {
+                    // EXIF データを1回のストリームで一括取得
+                    val exifData = readExifData(context, uri)
+                    if (exifData.latLng == null) {
                         skipped++
                         continue
                     }
-                    val timestamp = extractTimestamp(context, uri)
-                    val address = reverseGeocode(context, latLng)
+                    val address = reverseGeocode(context, exifData.latLng)
                     results.add(
                         PhotoLocation(
                             id = uri.hashCode(),
                             uri = uri,
-                            latLng = latLng,
-                            timestamp = timestamp,
+                            latLng = exifData.latLng,
+                            timestamp = exifData.timestamp,
                             address = address
                         )
                     )
@@ -73,51 +68,69 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     photos = current.photos + results,
                     isLoading = false,
                     skippedCount = current.skippedCount + skipped,
-                    errorMessage = if (skipped > 0 && results.isEmpty())
-                        "選択した写真に位置情報が含まれていません"
-                    else null
+                    errorMessage = when {
+                        skipped > 0 && results.isEmpty() ->
+                            "選択した写真に位置情報が含まれていません（${skipped}枚スキップ）"
+                        skipped > 0 ->
+                            "${skipped}枚は位置情報なしのためスキップしました"
+                        else -> null
+                    }
                 )
             }
         }
     }
 
-    /** 写真を選択状態にする（マーカータップ or サムネイルタップ） */
     fun selectPhoto(photo: PhotoLocation?) {
         _uiState.update { it.copy(selectedPhoto = photo) }
     }
 
-    /** 全写真をクリア */
     fun clearPhotos() {
         _uiState.update { MapUiState() }
     }
 
-    /** スナックバーエラーを消去 */
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    /** ExifInterface で GPS 座標を取得する */
-    private fun extractLatLng(context: Context, uri: Uri): LatLng? {
+    private data class ExifData(val latLng: LatLng?, val timestamp: String?)
+
+    /**
+     * EXIF データを読み取る（GPS + 撮影日時を1回のストリームで取得）
+     *
+     * Android 10+ では MediaStore が GPS を自動的に隠す（プライバシー保護）。
+     * [MediaStore.setRequireOriginal] で隠蔽を解除する。
+     * ACCESS_MEDIA_LOCATION 権限が AndroidManifest.xml に必要。
+     */
+    private fun readExifData(context: Context, uri: Uri): ExifData {
+        // setRequireOriginal で GPS の隠蔽を解除した URI を取得
+        val unredactedUri: Uri = try {
+            MediaStore.setRequireOriginal(uri)
+        } catch (e: Exception) {
+            uri  // クラウド写真など非対応の場合は元の URI を使用
+        }
+
+        // まず隠蔽解除 URI で試みる
+        readExifFromUri(context, unredactedUri)?.let { return it }
+
+        // 失敗した場合（SecurityException など）は元の URI でリトライ
+        return readExifFromUri(context, uri) ?: ExifData(null, null)
+    }
+
+    /** URI から InputStream を開いて ExifInterface で読み取る */
+    private fun readExifFromUri(context: Context, uri: Uri): ExifData? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 val exif = ExifInterface(stream)
-                val latLngArray = exif.latLong ?: return@use null
-                LatLng(latLngArray[0], latLngArray[1])
+                val latLng = exif.latLong?.let { LatLng(it[0], it[1]) }
+                val timestamp = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                    ?: exif.getAttribute(ExifInterface.TAG_DATETIME)
+                ExifData(latLng, timestamp)
             }
-        } catch (e: Exception) {
+        } catch (e: SecurityException) {
+            // ACCESS_MEDIA_LOCATION 未許可時、または setRequireOriginal 非対応
             null
-        }
-    }
-
-    /** EXIF から撮影日時文字列を取得する */
-    private fun extractTimestamp(context: Context, uri: Uri): String? {
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                ExifInterface(stream).getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-                    ?: ExifInterface(stream).getAttribute(ExifInterface.TAG_DATETIME)
-            }
         } catch (e: Exception) {
             null
         }
@@ -131,7 +144,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             val addresses = geocoder.getFromLocation(latLng.latitude, latLng.longitude, 1)
             addresses?.firstOrNull()?.let { address ->
                 buildString {
-                    // 都道府県〜番地を連結
                     for (i in 0..address.maxAddressLineIndex) {
                         if (isNotEmpty()) append(" ")
                         append(address.getAddressLine(i))

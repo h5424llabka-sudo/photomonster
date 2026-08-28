@@ -5,7 +5,6 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  # 手動実行ボタンも追加
   workflow_dispatch:
 
 jobs:
@@ -23,22 +22,33 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+          cache: gradle   # ~/.gradle/caches と ~/.gradle/wrapper をキャッシュ
 
-      # ── 3. Gradle Wrapper を実行可能にする ────────────────────────────────
+      # ── 3. Gradle キャッシュを明示的に復元（2段構え）────────────────────
+      - name: Cache Gradle build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            .gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      # ── 4. Gradle Wrapper を実行可能にする ────────────────────────────────
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ── 4. Google Maps API キーを GitHub Secrets から注入 ─────────────────
-      #   GitHub リポジトリの Settings > Secrets > MAPS_API_KEY を設定してください
+      # ── 5. Google Maps API キーを GitHub Secrets から注入 ─────────────────
       - name: Inject Maps API Key
         run: echo "MAPS_API_KEY=${{ secrets.MAPS_API_KEY }}" >> local.properties
 
-      # ── 5. デバッグ APK をビルド ──────────────────────────────────────────
+      # ── 6. デバッグ APK をビルド ──────────────────────────────────────────
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --build-cache --parallel --no-daemon
 
-      # ── 6. APK をアーティファクトとしてアップロード ──────────────────────
+      # ── 7. APK をアーティファクトとしてアップロード ──────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
