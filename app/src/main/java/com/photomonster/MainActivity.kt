@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -33,9 +35,9 @@ class MainActivity : ComponentActivity() {
                 MapScreen(
                     uiState = uiState,
                     onPickPhotos = {
+                        // PickVisualMediaRequest で画像のみを指定して起動
                         photoPickerLauncher.launch(
-                            androidx.activity.result.contract.ActivityResultContracts
-                                .PickMultipleVisualMedia.ImageOnly
+                            PickVisualMediaRequest(PickVisualMedia.ImageOnly)
                         )
                     },
                     onSelectPhoto = { viewModel.selectPhoto(it) },
