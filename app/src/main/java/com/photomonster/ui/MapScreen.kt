@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -233,6 +234,14 @@ private fun TopBar(
     onClearPhotos: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // PackageManager からバージョン名を取得
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
+        } catch (e: Exception) { "?" }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -254,12 +263,22 @@ private fun TopBar(
             )
             Spacer(Modifier.width(8.dp))
             Column {
-                Text(
-                    "PhotoMonster",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "PhotoMonster",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // バージョン表示（更新確認用）
+                    Text(
+                        "v$versionName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 1.dp)
+                    )
+                }
                 if (photoCount > 0) {
                     Text(
                         "${photoCount} 枚の位置情報",
