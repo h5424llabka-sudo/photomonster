@@ -1,0 +1,35 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- カメラ本体 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 38,40 Q 38,34 44,34 L 64,34 Q 70,34 70,40 L 70,68 Q 70,74 64,74 L 44,74 Q 38,74 38,68 Z" />
+
+    <!-- レンズ外周 -->
+    <path
+        android:fillColor="#82AAFF"
+        android:pathData="M 54,42 m -12,0 a 12,12 0 1 0 24,0 a 12,12 0 1 0 -24,0" />
+
+    <!-- レンズ内側 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M 54,42 m -8,0 a 8,8 0 1 0 16,0 a 8,8 0 1 0 -16,0" />
+
+    <!-- シャッターボタン風の丸 -->
+    <path
+        android:fillColor="#82AAFF"
+        android:pathData="M 54,42 m -4,0 a 4,4 0 1 0 8,0 a 4,4 0 1 0 -8,0" />
+
+    <!-- ピンマーカー -->
+    <path
+        android:fillColor="#64FFDA"
+        android:pathData="M 68,62 Q 72,56 72,52 Q 72,46 68,46 Q 64,46 64,52 Q 64,56 68,62 Z" />
+    <path
+        android:fillColor="#64FFDA"
+        android:pathData="M 68,62 m -2,0 a 2,2 0 1 0 4,0 a 2,2 0 1 0 -4,0" />
+
+</vector>
