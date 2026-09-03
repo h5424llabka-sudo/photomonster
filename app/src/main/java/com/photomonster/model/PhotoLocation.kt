@@ -2,6 +2,7 @@ package com.photomonster.model
 
 import android.net.Uri
 import com.google.android.gms.maps.model.LatLng
+import com.google.maps.android.clustering.ClusterItem
 
 /**
  * 位置情報付き写真のデータモデル
@@ -17,7 +18,12 @@ data class PhotoLocation(
     val latLng: LatLng,
     val timestamp: String?,
     val address: String? = null
-) {
+) : ClusterItem {
+    override fun getPosition(): LatLng = latLng
+    override fun getTitle(): String? = formattedTimestamp
+    override fun getSnippet(): String? = address
+    override fun getZIndex(): Float? = null
+
     /** 表示用の撮影日時（"2025:01:15 14:30:00" → "2025/01/15 14:30"） */
     val formattedTimestamp: String
         get() = timestamp

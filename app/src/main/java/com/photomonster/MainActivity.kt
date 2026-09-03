@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
                             permissionLauncher.launch(permission)
                         }
                     },
-                    onSelectPhoto = { viewModel.selectPhoto(it) },
+                    onSelectCluster = { viewModel.selectCluster(it) },
                     onClearPhotos = { viewModel.clearPhotos() }
                 )
             }

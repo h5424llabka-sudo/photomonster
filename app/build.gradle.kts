@@ -21,8 +21,8 @@ android {
         applicationId = "com.photomonster"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.maps.compose)
+    implementation(libs.maps.compose.utils)
     implementation(libs.play.services.maps)
     implementation(libs.androidx.exifinterface)
     implementation(libs.coil.compose)

@@ -22,7 +22,7 @@ import java.util.Locale
 /** アプリの UI 状態 */
 data class MapUiState(
     val photos: List<PhotoLocation> = emptyList(),
-    val selectedPhoto: PhotoLocation? = null,
+    val selectedCluster: List<PhotoLocation>? = null,
     val isLoading: Boolean = false,
     val skippedCount: Int = 0,
     val errorMessage: String? = null
@@ -80,8 +80,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun selectPhoto(photo: PhotoLocation?) {
-        _uiState.update { it.copy(selectedPhoto = photo) }
+    fun selectCluster(photos: List<PhotoLocation>?) {
+        _uiState.update { it.copy(selectedCluster = photos) }
     }
 
     fun clearPhotos() {
