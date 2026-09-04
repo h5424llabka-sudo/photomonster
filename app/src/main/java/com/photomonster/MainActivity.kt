@@ -2,6 +2,7 @@ package com.photomonster
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,32 +40,54 @@ class MainActivity : ComponentActivity() {
                 val viewModel: MapViewModel = viewModel()
                 val uiState by viewModel.uiState.collectAsState()
 
-                // ── 写真選択ランチャー ─────────────────────────────────────────────
+                // ── 写真選択ランチャー ──────────────────────────────────────────────
                 // GetMultipleContents を使う理由:
-                //   PickMultipleVisualMedia (Photo Picker) が返す URI は
-                //   content://com.android.providers.media.photopicker/... 形式で
-                //   MediaStore.setRequireOriginal() に非対応。
-                //   GetMultipleContents は content://media/external/... の
-                //   通常の MediaStore URI を返すため GPS 取得が可能。
+                //   MediaStore URI (content://media/external/...) を返すため
+                //   setRequireOriginal() でGPS隠蔽解除が可能。
+                //   PickMultipleVisualMedia (Photo Picker) のURI形式では不可。
                 val getContentLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.GetMultipleContents()
                 ) { uris ->
                     viewModel.processSelectedUris(uris)
                 }
 
-                // ── ACCESS_MEDIA_LOCATION 権限リクエスト ──────────────────────────
-                val permissionLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.RequestPermission()
+                // ── 権限リクエストランチャー (複数権限を同時に要求) ──────────────────
+                val permissionsLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) { _ ->
+                    // 権限結果に関わらず写真選択を起動
+                    // (権限なしの場合はGPS情報だけ取れないのでスキップ扱いになる)
                     getContentLauncher.launch("image/*")
                 }
 
-                val onPickPhotos = {
-                    val permission = Manifest.permission.ACCESS_MEDIA_LOCATION
-                    if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+                val onPickPhotos: () -> Unit = {
+                    // 必要な権限を収集
+                    val neededPermissions = mutableListOf<String>()
+
+                    // Android 13+ は READ_MEDIA_IMAGES (画像の読み込みに必要)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
+                            != PackageManager.PERMISSION_GRANTED) {
+                            neededPermissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                        }
+                    } else {
+                        // Android 12以下は READ_EXTERNAL_STORAGE
+                        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                            != PackageManager.PERMISSION_GRANTED) {
+                            neededPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
+                    }
+
+                    // ACCESS_MEDIA_LOCATION (GPS読み取り用)
+                    if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_MEDIA_LOCATION)
+                        != PackageManager.PERMISSION_GRANTED) {
+                        neededPermissions.add(Manifest.permission.ACCESS_MEDIA_LOCATION)
+                    }
+
+                    if (neededPermissions.isEmpty()) {
                         getContentLauncher.launch("image/*")
                     } else {
-                        permissionLauncher.launch(permission)
+                        permissionsLauncher.launch(neededPermissions.toTypedArray())
                     }
                 }
 
@@ -87,7 +110,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     else -> {
-                        // ── 下部ナビゲーション付きメイン画面 ─────────────────────────
                         var selectedTab by remember { mutableStateOf(0) }
 
                         Scaffold(
@@ -126,7 +148,7 @@ class MainActivity : ComponentActivity() {
                                     0 -> MapScreen(
                                         uiState = uiState,
                                         onPickPhotos = onPickPhotos,
-                                        onSelectCluster = { viewModel.selectCluster(it) },
+                                        onSelectSpot = { viewModel.selectSpot(it) },
                                         onCollectItem = { viewModel.collectItemFromSpot(it) },
                                         onEncounterMonster = { viewModel.encounterMonster(it) },
                                         onClearPhotos = { viewModel.clearPhotos() }

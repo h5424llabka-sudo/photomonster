@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Android 13+ では Photo Picker を使うためストレージ権限不要 -->
-    <!-- Android 12 以下のフォールバック用 -->
+    <!-- Android 12以下のフォールバック用 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- Android 13+ (API 33+) で画像を読み込むために必要 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
     <!-- ★必須: Android 10+ でEXIF内のGPS座標を読むために必要 -->
-    <!-- この権限がないとMediaStoreがGPSデータを自動的に隠す（normal権限なので確認ダイアログなし） -->
+    <!-- この権限がないとMediaStoreがGPSデータを自動的に隠す -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
     <!-- インターネット接続（マップタイルの取得） -->

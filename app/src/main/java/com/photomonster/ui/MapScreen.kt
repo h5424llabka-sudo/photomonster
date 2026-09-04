@@ -1,5 +1,11 @@
 package com.photomonster.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RectF
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,26 +34,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.*
-import com.google.maps.android.compose.clustering.Clustering
 import com.photomonster.model.Monster
-import com.photomonster.model.PhotoLocation
+import com.photomonster.model.PhotoSpot
 import com.photomonster.viewmodel.MapUiState
 import kotlinx.coroutines.launch
 
-/**
- * マップ画面 Composable
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     uiState: MapUiState,
     onPickPhotos: () -> Unit,
-    onSelectCluster: (List<PhotoLocation>?) -> Unit,
+    onSelectSpot: (PhotoSpot?) -> Unit,
     onCollectItem: (Int) -> Unit,
     onEncounterMonster: (Monster) -> Unit,
     onClearPhotos: () -> Unit
@@ -58,11 +61,11 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
-    // 写真が追加されたらカメラをフィット
-    LaunchedEffect(uiState.photos.size) {
-        if (uiState.photos.isNotEmpty()) {
+    // スポットが追加されたらカメラをフィット
+    LaunchedEffect(uiState.photoSpots.size) {
+        if (uiState.photoSpots.isNotEmpty()) {
             try {
-                val bounds = buildBounds(uiState.photos.map { it.latLng })
+                val bounds = buildBounds(uiState.photoSpots.map { it.centerLatLng })
                 scope.launch {
                     cameraPositionState.animate(
                         CameraUpdateFactory.newLatLngBounds(bounds, 120),
@@ -84,33 +87,30 @@ fun MapScreen(
                 myLocationButtonEnabled = false,
                 mapToolbarEnabled = false
             ),
-            properties = MapProperties(mapType = MapType.NORMAL),
-            onMapClick = { onSelectCluster(null) }
+            onMapClick = { onSelectSpot(null) }
         ) {
-            if (uiState.photos.isNotEmpty()) {
-                Clustering(
-                    items = uiState.photos,
-                    onClusterClick = { cluster ->
-                        onSelectCluster(cluster.items.toList())
-                        false
-                    },
-                    onClusterItemClick = { item ->
-                        onSelectCluster(listOf(item))
-                        false
-                    },
-                    clusterContent = { cluster ->
-                        val representative = cluster.items.firstOrNull()
-                        ClusterIcon(photo = representative, count = cluster.size)
-                    },
-                    clusterItemContent = { item ->
-                        ClusterIcon(photo = item, count = null)
+            // フォトスポット（200m以内は1つのピン、ズームに関係なく固定）
+            uiState.photoSpots.forEach { spot ->
+                val borderColor = if (spot.canCollectItems)
+                    com.google.android.gms.maps.model.BitmapDescriptorFactory.HUE_YELLOW
+                else
+                    com.google.android.gms.maps.model.BitmapDescriptorFactory.HUE_AZURE
+
+                MarkerComposable(
+                    state = MarkerState(position = spot.centerLatLng),
+                    title = spot.representativePhoto.formattedTimestamp,
+                    onClick = {
+                        onSelectSpot(spot)
+                        true
                     }
-                )
+                ) {
+                    SpotIcon(spot = spot)
+                }
             }
 
-            // 野生モンスターの表示
+            // 野生モンスター
             uiState.wildMonsters.forEach { monster ->
-                MarkerInfoWindow(
+                Marker(
                     state = MarkerState(position = monster.latLng),
                     title = monster.name,
                     snippet = "${monster.type.emoji} ${monster.type.displayName} | CP: ${monster.attack + monster.defense}",
@@ -123,12 +123,12 @@ fun MapScreen(
             }
         }
 
-        // ── 上部ツールバー ────────────────────────────────────────────────────
+        // ── 上部ツールバー ──────────────────────────────────────────────────
         TopBar(
-            photoCount = uiState.photos.size,
+            spotCount = uiState.photoSpots.size,
+            wildCount = uiState.wildMonsters.size,
             captureCubes = uiState.captureCubes,
-            caughtMonstersCount = uiState.caughtMonsters.size,
-            wildMonsterCount = uiState.wildMonsters.size,
+            caughtCount = uiState.caughtMonsters.size,
             onPickPhotos = onPickPhotos,
             onClearPhotos = onClearPhotos,
             modifier = Modifier
@@ -137,12 +137,12 @@ fun MapScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         )
 
-        // ── 全体フィット FAB ────────────────────────────────────────────────
-        if (uiState.photos.isNotEmpty()) {
+        // ── 全体フィット FAB ──────────────────────────────────────────────
+        if (uiState.photoSpots.isNotEmpty()) {
             SmallFloatingActionButton(
                 onClick = {
                     try {
-                        val bounds = buildBounds(uiState.photos.map { it.latLng })
+                        val bounds = buildBounds(uiState.photoSpots.map { it.centerLatLng })
                         scope.launch {
                             cameraPositionState.animate(
                                 CameraUpdateFactory.newLatLngBounds(bounds, 120),
@@ -160,12 +160,12 @@ fun MapScreen(
             }
         }
 
-        // ── ローディングオーバーレイ ──────────────────────────────────────────
+        // ── ローディング ──────────────────────────────────────────────────
         if (uiState.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.35f)),
+                    .background(Color.Black.copy(alpha = 0.4f)),
                 contentAlignment = Alignment.Center
             ) {
                 Card(shape = RoundedCornerShape(16.dp)) {
@@ -181,98 +181,106 @@ fun MapScreen(
             }
         }
 
-        // ── エラー Snackbar ─────────────────────────────────────────────────
+        // ── エラーメッセージ ────────────────────────────────────────────
         uiState.errorMessage?.let { msg ->
             Snackbar(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer
             ) { Text(msg) }
         }
     }
 
-    // ── 選択クラスターのボトムシート ──────────────────────────────────────────
-    if (uiState.selectedCluster != null) {
+    // ── 写真一覧ボトムシート ────────────────────────────────────────────────
+    if (uiState.selectedSpot != null) {
         ModalBottomSheet(
-            onDismissRequest = { onSelectCluster(null) },
+            onDismissRequest = { onSelectSpot(null) },
             sheetState = sheetState,
             containerColor = MaterialTheme.colorScheme.surface,
             dragHandle = { BottomSheetDefaults.DragHandle() }
         ) {
+            val spot = uiState.selectedSpot
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                val photos = uiState.selectedCluster
-                if (photos.isNotEmpty()) {
-                    val date = photos.first().formattedTimestamp.split(" ").firstOrNull() ?: "日時不明"
+                // ヘッダー
+                Text(
+                    text = spot.representativePhoto.formattedTimestamp.split(" ").firstOrNull() ?: "",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+                spot.representativePhoto.address?.let { addr ->
                     Text(
-                        text = date,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                        text = addr,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 4.dp)
                     )
-                    photos.firstOrNull()?.address?.let { addr ->
-                        Text(
-                            text = addr,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp)
-                        )
-                    }
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 200.dp, max = 500.dp)
-                    ) {
-                        items(photos) { photo ->
-                            Box(modifier = Modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp))) {
-                                AsyncImage(
-                                    model = photo.uri,
-                                    contentDescription = "写真",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                // アイテム回収可能なオーバーレイ
-                                if (photo.canCollectItems) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.4f))
-                                            .clickable { onCollectItem(photo.id) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text("📦", fontSize = 28.sp)
-                                            Text(
-                                                "タップで回収",
-                                                color = Color.White,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
+                }
+                Text(
+                    text = "${spot.photos.size} 枚の写真",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp)
+                )
+
+                // 写真グリッド
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 500.dp)
+                ) {
+                    items(spot.photos) { photo ->
+                        Box(modifier = Modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp))) {
+                            AsyncImage(
+                                model = photo.uri,
+                                contentDescription = "写真",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            // アイテム回収オーバーレイ
+                            if (photo.canCollectItems) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                        .clickable { onCollectItem(photo.id) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("📦", fontSize = 28.sp)
+                                        Text(
+                                            "タップで回収",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
 }
 
-// ── マップ上の写真アイコン ──────────────────────────────────────────────────────
+// ── マップ上のスポットアイコン ────────────────────────────────────────────────
 
 @Composable
-private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
+private fun SpotIcon(spot: PhotoSpot) {
+    val photo = spot.representativePhoto
+    val count = spot.photos.size
+    val borderColor = if (spot.canCollectItems) Color.Yellow else Color.White
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(72.dp)
@@ -281,40 +289,29 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
             modifier = Modifier.size(62.dp),
             shape = CircleShape,
             color = Color.LightGray,
-            border = BorderStroke(
-                width = 3.dp,
-                color = if (photo?.canCollectItems == true) Color.Yellow else Color.White
-            ),
+            border = BorderStroke(3.dp, borderColor),
             shadowElevation = 6.dp
         ) {
-            if (photo != null) {
-                AsyncImage(
-                    model = photo.uri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = Color.Gray,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
+            AsyncImage(
+                model = photo.uri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
-        if (count != null && count > 1) {
+        // 枚数バッジ
+        if (count > 1) {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(x = (-4).dp, y = 4.dp)
                     .size(22.dp)
-                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                    .background(Color.Red, CircleShape)
             ) {
                 Text(
-                    text = if (count > 99) "99+" else count.toString(),
+                    text = if (count > 99) "99+" else "$count",
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
@@ -328,10 +325,10 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
 
 @Composable
 private fun TopBar(
-    photoCount: Int,
+    spotCount: Int,
+    wildCount: Int,
     captureCubes: Int,
-    caughtMonstersCount: Int,
-    wildMonsterCount: Int,
+    caughtCount: Int,
     onPickPhotos: () -> Unit,
     onClearPhotos: () -> Unit,
     modifier: Modifier = Modifier
@@ -370,17 +367,17 @@ private fun TopBar(
                     modifier = Modifier.padding(bottom = 1.dp)
                 )
             }
-            if (photoCount > 0) {
+            if (spotCount > 0) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("📍$photoCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    Text("👾$wildMonsterCount", style = MaterialTheme.typography.labelSmall)
+                    Text("📍$spotCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("👾$wildCount", style = MaterialTheme.typography.labelSmall)
                     Text("📦$captureCubes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                    Text("🐾$caughtMonstersCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    Text("🐾$caughtCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (photoCount > 0) {
+            if (spotCount > 0) {
                 IconButton(onClick = onClearPhotos) {
                     Icon(Icons.Default.DeleteSweep, contentDescription = "クリア", tint = MaterialTheme.colorScheme.error)
                 }
