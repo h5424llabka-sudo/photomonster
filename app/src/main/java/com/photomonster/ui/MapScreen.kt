@@ -1,10 +1,5 @@
 package com.photomonster.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,7 +11,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
@@ -30,7 +24,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -41,12 +34,13 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.maps.android.compose.*
 import com.google.maps.android.compose.clustering.Clustering
+import com.photomonster.model.Monster
 import com.photomonster.model.PhotoLocation
 import com.photomonster.viewmodel.MapUiState
 import kotlinx.coroutines.launch
 
 /**
- * メイン画面 Composable
+ * マップ画面 Composable
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,12 +49,11 @@ fun MapScreen(
     onPickPhotos: () -> Unit,
     onSelectCluster: (List<PhotoLocation>?) -> Unit,
     onCollectItem: (Int) -> Unit,
-    onEncounterMonster: (com.photomonster.model.Monster) -> Unit,
-    onEnterBattleMode: () -> Unit,
+    onEncounterMonster: (Monster) -> Unit,
     onClearPhotos: () -> Unit
 ) {
     val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(LatLng(35.6812, 139.7671), 5f) // 東京
+        position = CameraPosition.fromLatLngZoom(LatLng(35.6812, 139.7671), 5f)
     }
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -68,13 +61,15 @@ fun MapScreen(
     // 写真が追加されたらカメラをフィット
     LaunchedEffect(uiState.photos.size) {
         if (uiState.photos.isNotEmpty()) {
-            val bounds = buildBounds(uiState.photos.map { it.latLng })
-            scope.launch {
-                cameraPositionState.animate(
-                    CameraUpdateFactory.newLatLngBounds(bounds, 120),
-                    durationMs = 800
-                )
-            }
+            try {
+                val bounds = buildBounds(uiState.photos.map { it.latLng })
+                scope.launch {
+                    cameraPositionState.animate(
+                        CameraUpdateFactory.newLatLngBounds(bounds, 120),
+                        durationMs = 800
+                    )
+                }
+            } catch (_: Exception) { }
         }
     }
 
@@ -97,30 +92,28 @@ fun MapScreen(
                     items = uiState.photos,
                     onClusterClick = { cluster ->
                         onSelectCluster(cluster.items.toList())
-                        false // trueにするとカメラズームしなくなる
+                        false
                     },
                     onClusterItemClick = { item ->
                         onSelectCluster(listOf(item))
                         false
                     },
                     clusterContent = { cluster ->
-                        // クラスターの代表画像（最初の1枚）を表示
                         val representative = cluster.items.firstOrNull()
                         ClusterIcon(photo = representative, count = cluster.size)
                     },
                     clusterItemContent = { item ->
-                        // 単一のアイテムの画像
                         ClusterIcon(photo = item, count = null)
                     }
                 )
             }
-            
-            // ゲーム仕様: 野生モンスターの表示（フェーズ2）
+
+            // 野生モンスターの表示
             uiState.wildMonsters.forEach { monster ->
                 MarkerInfoWindow(
                     state = MarkerState(position = monster.latLng),
                     title = monster.name,
-                    snippet = "属性: ${monster.type.emoji} ${monster.type.displayName} / CP: ${monster.attack + monster.defense}",
+                    snippet = "${monster.type.emoji} ${monster.type.displayName} | CP: ${monster.attack + monster.defense}",
                     icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
                     onClick = {
                         onEncounterMonster(monster)
@@ -135,8 +128,8 @@ fun MapScreen(
             photoCount = uiState.photos.size,
             captureCubes = uiState.captureCubes,
             caughtMonstersCount = uiState.caughtMonsters.size,
+            wildMonsterCount = uiState.wildMonsters.size,
             onPickPhotos = onPickPhotos,
-            onEnterBattleMode = onEnterBattleMode,
             onClearPhotos = onClearPhotos,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -144,21 +137,23 @@ fun MapScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         )
 
-        // ── 全体にフィット FAB ──────────────────────────────────────────────
+        // ── 全体フィット FAB ────────────────────────────────────────────────
         if (uiState.photos.isNotEmpty()) {
             SmallFloatingActionButton(
                 onClick = {
-                    val bounds = buildBounds(uiState.photos.map { it.latLng })
-                    scope.launch {
-                        cameraPositionState.animate(
-                            CameraUpdateFactory.newLatLngBounds(bounds, 120),
-                            durationMs = 600
-                        )
-                    }
+                    try {
+                        val bounds = buildBounds(uiState.photos.map { it.latLng })
+                        scope.launch {
+                            cameraPositionState.animate(
+                                CameraUpdateFactory.newLatLngBounds(bounds, 120),
+                                durationMs = 600
+                            )
+                        }
+                    } catch (_: Exception) { }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 48.dp),
+                    .padding(end = 16.dp, bottom = 16.dp),
                 containerColor = MaterialTheme.colorScheme.primaryContainer
             ) {
                 Icon(Icons.Default.MyLocation, contentDescription = "全体表示")
@@ -173,12 +168,7 @@ fun MapScreen(
                     .background(Color.Black.copy(alpha = 0.35f)),
                 contentAlignment = Alignment.Center
             ) {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
+                Card(shape = RoundedCornerShape(16.dp)) {
                     Row(
                         modifier = Modifier.padding(24.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -191,7 +181,7 @@ fun MapScreen(
             }
         }
 
-        // ── エラー Snackbar ────────────────────────────────────────────────────
+        // ── エラー Snackbar ─────────────────────────────────────────────────
         uiState.errorMessage?.let { msg ->
             Snackbar(
                 modifier = Modifier
@@ -199,13 +189,11 @@ fun MapScreen(
                     .padding(16.dp),
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer
-            ) {
-                Text(msg)
-            }
+            ) { Text(msg) }
         }
     }
 
-    // ── 選択中クラスターの写真一覧ボトムシート ────────────────────────────────────
+    // ── 選択クラスターのボトムシート ──────────────────────────────────────────
     if (uiState.selectedCluster != null) {
         ModalBottomSheet(
             onDismissRequest = { onSelectCluster(null) },
@@ -218,19 +206,23 @@ fun MapScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                // ボトムシートのヘッダー情報
                 val photos = uiState.selectedCluster
                 if (photos.isNotEmpty()) {
-                    val date = photos.first().formattedTimestamp?.split(" ")?.get(0) ?: "日時不明"
+                    val date = photos.first().formattedTimestamp.split(" ").firstOrNull() ?: "日時不明"
                     Text(
-                        text = "$date",
+                        text = date,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
-                    Spacer(Modifier.height(16.dp))
-                    
-                    // 写真グリッド
+                    photos.firstOrNull()?.address?.let { addr ->
+                        Text(
+                            text = addr,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp)
+                        )
+                    }
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -247,7 +239,7 @@ fun MapScreen(
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
-                                // アイテム回収可能な場合のオーバーレイボタン
+                                // アイテム回収可能なオーバーレイ
                                 if (photo.canCollectItems) {
                                     Box(
                                         modifier = Modifier
@@ -257,16 +249,11 @@ fun MapScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(
-                                                Icons.Default.AddPhotoAlternate, // 仮のギフトアイコンの代わり
-                                                contentDescription = "回収",
-                                                tint = Color.Yellow,
-                                                modifier = Modifier.size(32.dp)
-                                            )
+                                            Text("📦", fontSize = 28.sp)
                                             Text(
                                                 "タップで回収",
                                                 color = Color.White,
-                                                fontSize = 12.sp,
+                                                fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
@@ -282,17 +269,16 @@ fun MapScreen(
     }
 }
 
-// ── マップ上のカスタムアイコン ──────────────────────────────────────────────────
+// ── マップ上の写真アイコン ──────────────────────────────────────────────────────
 
 @Composable
 private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(70.dp) // 全体のサイズ
+        modifier = Modifier.size(72.dp)
     ) {
-        // 白い縁取り（回収可能なら金色）のある丸い画像
         Surface(
-            modifier = Modifier.size(60.dp),
+            modifier = Modifier.size(62.dp),
             shape = CircleShape,
             color = Color.LightGray,
             border = BorderStroke(
@@ -318,7 +304,6 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
             }
         }
 
-        // バッジ（枚数）
         if (count != null && count > 1) {
             Box(
                 contentAlignment = Alignment.Center,
@@ -326,12 +311,12 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
                     .align(Alignment.TopEnd)
                     .offset(x = (-4).dp, y = 4.dp)
                     .size(22.dp)
-                    .background(Color.Red, CircleShape)
+                    .background(MaterialTheme.colorScheme.error, CircleShape)
             ) {
                 Text(
-                    text = count.toString(),
+                    text = if (count > 99) "99+" else count.toString(),
                     color = Color.White,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -346,8 +331,8 @@ private fun TopBar(
     photoCount: Int,
     captureCubes: Int,
     caughtMonstersCount: Int,
+    wildMonsterCount: Int,
     onPickPhotos: () -> Unit,
-    onEnterBattleMode: () -> Unit,
     onClearPhotos: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -363,83 +348,48 @@ private fun TopBar(
             .fillMaxWidth()
             .shadow(8.dp, RoundedCornerShape(20.dp))
             .background(
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
                 RoundedCornerShape(20.dp)
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Default.LocationOn,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        "PhotoMonster",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "v$versionName",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 1.dp)
-                    )
-                }
-                if (photoCount > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "${photoCount} スポット",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "📦 x $captureCubes",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.DarkGray,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+        Column {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    "PhotoMonster",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    "v$versionName",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 1.dp)
+                )
+            }
+            if (photoCount > 0) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("📍$photoCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text("👾$wildMonsterCount", style = MaterialTheme.typography.labelSmall)
+                    Text("📦$captureCubes", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    Text("🐾$caughtMonstersCount", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (caughtMonstersCount > 0) {
-                Button(
-                    onClick = onEnterBattleMode,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) {
-                    Text("バトル", fontSize = 13.sp)
-                }
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (photoCount > 0) {
                 IconButton(onClick = onClearPhotos) {
-                    Icon(
-                        Icons.Default.DeleteSweep,
-                        contentDescription = "クリア",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Icon(Icons.Default.DeleteSweep, contentDescription = "クリア", tint = MaterialTheme.colorScheme.error)
                 }
             }
             FilledTonalButton(
                 onClick = onPickPhotos,
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(
-                    Icons.Default.AddPhotoAlternate,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
+                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("写真を選択", fontSize = 13.sp)
             }
