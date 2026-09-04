@@ -54,6 +54,9 @@ fun MapScreen(
     uiState: MapUiState,
     onPickPhotos: () -> Unit,
     onSelectCluster: (List<PhotoLocation>?) -> Unit,
+    onCollectItem: (Int) -> Unit,
+    onEncounterMonster: (com.photomonster.model.Monster) -> Unit,
+    onEnterBattleMode: () -> Unit,
     onClearPhotos: () -> Unit
 ) {
     val cameraPositionState = rememberCameraPositionState {
@@ -111,12 +114,29 @@ fun MapScreen(
                     }
                 )
             }
+            
+            // ゲーム仕様: 野生モンスターの表示（フェーズ2）
+            uiState.wildMonsters.forEach { monster ->
+                MarkerInfoWindow(
+                    state = MarkerState(position = monster.latLng),
+                    title = monster.name,
+                    snippet = "属性: ${monster.type.emoji} ${monster.type.displayName} / CP: ${monster.attack + monster.defense}",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
+                    onClick = {
+                        onEncounterMonster(monster)
+                        true
+                    }
+                )
+            }
         }
 
         // ── 上部ツールバー ────────────────────────────────────────────────────
         TopBar(
             photoCount = uiState.photos.size,
+            captureCubes = uiState.captureCubes,
+            caughtMonstersCount = uiState.caughtMonsters.size,
             onPickPhotos = onPickPhotos,
+            onEnterBattleMode = onEnterBattleMode,
             onClearPhotos = onClearPhotos,
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -220,14 +240,39 @@ fun MapScreen(
                             .heightIn(min = 200.dp, max = 500.dp)
                     ) {
                         items(photos) { photo ->
-                            AsyncImage(
-                                model = photo.uri,
-                                contentDescription = "写真",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .aspectRatio(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                            )
+                            Box(modifier = Modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp))) {
+                                AsyncImage(
+                                    model = photo.uri,
+                                    contentDescription = "写真",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // アイテム回収可能な場合のオーバーレイボタン
+                                if (photo.canCollectItems) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.4f))
+                                            .clickable { onCollectItem(photo.id) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(
+                                                Icons.Default.AddPhotoAlternate, // 仮のギフトアイコンの代わり
+                                                contentDescription = "回収",
+                                                tint = Color.Yellow,
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                            Text(
+                                                "タップで回収",
+                                                color = Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(24.dp))
@@ -245,12 +290,15 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
         contentAlignment = Alignment.Center,
         modifier = Modifier.size(70.dp) // 全体のサイズ
     ) {
-        // 白い縁取りのある丸い画像
+        // 白い縁取り（回収可能なら金色）のある丸い画像
         Surface(
             modifier = Modifier.size(60.dp),
             shape = CircleShape,
             color = Color.LightGray,
-            border = BorderStroke(3.dp, Color.White),
+            border = BorderStroke(
+                width = 3.dp,
+                color = if (photo?.canCollectItems == true) Color.Yellow else Color.White
+            ),
             shadowElevation = 6.dp
         ) {
             if (photo != null) {
@@ -296,7 +344,10 @@ private fun ClusterIcon(photo: PhotoLocation?, count: Int?) {
 @Composable
 private fun TopBar(
     photoCount: Int,
+    captureCubes: Int,
+    caughtMonstersCount: Int,
     onPickPhotos: () -> Unit,
+    onEnterBattleMode: () -> Unit,
     onClearPhotos: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -344,15 +395,33 @@ private fun TopBar(
                     )
                 }
                 if (photoCount > 0) {
-                    Text(
-                        "${photoCount} 枚の位置情報",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "${photoCount} スポット",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "📦 x $captureCubes",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.DarkGray,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (caughtMonstersCount > 0) {
+                Button(
+                    onClick = onEnterBattleMode,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("バトル", fontSize = 13.sp)
+                }
+            }
             if (photoCount > 0) {
                 IconButton(onClick = onClearPhotos) {
                     Icon(

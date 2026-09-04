@@ -11,13 +11,15 @@ import com.google.maps.android.clustering.ClusterItem
  * @param latLng      GPS 座標 (latitude, longitude)
  * @param timestamp   EXIF の撮影日時文字列（例: "2025:01:15 14:30:00"）
  * @param address     逆ジオコーディングで取得した住所（取得前は null）
+ * @param lastCollectedTime ゲーム仕様: アイテム最終回収時刻（Epoch ms）
  */
 data class PhotoLocation(
     val id: Int,
     val uri: Uri,
     val latLng: LatLng,
     val timestamp: String?,
-    val address: String? = null
+    val address: String? = null,
+    val lastCollectedTime: Long = 0L
 ) : ClusterItem {
     override fun getPosition(): LatLng = latLng
     override fun getTitle(): String? = formattedTimestamp
@@ -27,10 +29,13 @@ data class PhotoLocation(
     /** 表示用の撮影日時（"2025:01:15 14:30:00" → "2025/01/15 14:30"） */
     val formattedTimestamp: String
         get() = timestamp
-            ?.replace(":", "/", ignoreCase = false)
-            ?.let { raw ->
-                // "2025/01/15 14/30/00" になるので時刻の"/"を":"に戻す
-                val parts = raw.split(" ")
-                if (parts.size == 2) "${parts[0]} ${parts[1].replace("/", ":")}" else raw
-            } ?: "撮影日時不明"
+            ?.replaceFirst(":", "/")
+            ?.replaceFirst(":", "/")
+            ?.substringBeforeLast(":") ?: "撮影日時不明"
+
+    /**
+     * クールダウン（例: 5分）が経過し、再びアイテムが回収可能かどうか
+     */
+    val canCollectItems: Boolean
+        get() = (System.currentTimeMillis() - lastCollectedTime) > (5 * 60 * 1000)
 }

@@ -15,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.photomonster.ui.BattleScreen
+import com.photomonster.ui.CaptureScreen
 import com.photomonster.ui.MapScreen
 import com.photomonster.ui.theme.PhotoMonsterTheme
 import com.photomonster.viewmodel.MapViewModel
@@ -52,23 +54,40 @@ class MainActivity : ComponentActivity() {
                     getContentLauncher.launch("image/*")
                 }
 
-                MapScreen(
-                    uiState = uiState,
-                    onPickPhotos = {
-                        val permission = Manifest.permission.ACCESS_MEDIA_LOCATION
-                        if (ContextCompat.checkSelfPermission(this, permission)
-                            == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            // 既に許可済み → そのまま写真選択へ
-                            getContentLauncher.launch("image/*")
-                        } else {
-                            // 未許可 → ダイアログ表示後、結果に関わらず写真選択へ
-                            permissionLauncher.launch(permission)
-                        }
-                    },
-                    onSelectCluster = { viewModel.selectCluster(it) },
-                    onClearPhotos = { viewModel.clearPhotos() }
-                )
+                if (uiState.isBattleMode) {
+                    BattleScreen(
+                        playerParty = uiState.caughtMonsters,
+                        onExit = { viewModel.exitBattleMode() }
+                    )
+                } else if (uiState.encounteringMonster != null) {
+                    CaptureScreen(
+                        monster = uiState.encounteringMonster!!,
+                        captureCubes = uiState.captureCubes,
+                        onAttemptCapture = { viewModel.attemptCapture() },
+                        onFlee = { viewModel.fleeEncounter() }
+                    )
+                } else {
+                    MapScreen(
+                        uiState = uiState,
+                        onPickPhotos = {
+                            val permission = Manifest.permission.ACCESS_MEDIA_LOCATION
+                            if (ContextCompat.checkSelfPermission(this, permission)
+                                == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                // 既に許可済み → そのまま写真選択へ
+                                getContentLauncher.launch("image/*")
+                            } else {
+                                // 未許可 → ダイアログ表示後、結果に関わらず写真選択へ
+                                permissionLauncher.launch(permission)
+                            }
+                        },
+                        onSelectCluster = { viewModel.selectCluster(it) },
+                        onCollectItem = { viewModel.collectItemFromSpot(it) },
+                        onEncounterMonster = { viewModel.encounterMonster(it) },
+                        onEnterBattleMode = { viewModel.enterBattleMode() },
+                        onClearPhotos = { viewModel.clearPhotos() }
+                    )
+                }
             }
         }
     }
