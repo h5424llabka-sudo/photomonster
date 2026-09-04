@@ -106,8 +106,6 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
             val context: Context = getApplication()
-            val newPhotos = mutableListOf<PhotoLocation>()
-            val newMonsters = mutableListOf<Monster>()
             var skipped = 0
 
             // 既存URIの重複チェック用
@@ -115,6 +113,10 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
 
             // バッチ処理: 5枚ずつ処理（Geocoderの負荷を抑える）
             for (batch in uris.chunked(5)) {
+                val batchPhotos = mutableListOf<PhotoLocation>()
+                val batchMonsters = mutableListOf<Monster>()
+                var batchSkipped = 0
+
                 withContext(Dispatchers.IO) {
                     for (uri in batch) {
                         // 重複スキップ
@@ -123,13 +125,13 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         try {
                             val exif = readExifSafely(context, uri)
                             if (exif.latLng == null) {
-                                skipped++
+                                batchSkipped++
                                 continue
                             }
 
                             val address = try { reverseGeocode(context, exif.latLng) } catch (e: Exception) { null }
 
-                            newPhotos.add(
+                            batchPhotos.add(
                                 PhotoLocation(
                                     id = System.nanoTime().toInt() xor uri.hashCode(),
                                     uri = uri,
@@ -140,23 +142,25 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                             )
                             existingUriStrings.add(uri.toString())
 
-                            generateMonster(exif)?.let { newMonsters.add(it) }
+                            generateMonster(exif)?.let { batchMonsters.add(it) }
 
                         } catch (e: Exception) {
-                            skipped++
+                            batchSkipped++
                         }
                     }
                 }
 
+                skipped += batchSkipped
+
                 // バッチごとに中間更新
-                if (newPhotos.isNotEmpty()) {
-                    val mergedPhotos = _uiState.value.photos + newPhotos
+                if (batchPhotos.isNotEmpty()) {
+                    val mergedPhotos = _uiState.value.photos + batchPhotos
                     val mergedSpots = buildPhotoSpots(context, mergedPhotos)
                     _uiState.update { current ->
                         current.copy(
                             photos = mergedPhotos,
                             photoSpots = mergedSpots,
-                            wildMonsters = current.wildMonsters + newMonsters
+                            wildMonsters = current.wildMonsters + batchMonsters
                         )
                     }
                     // 中間状態でも保存
@@ -170,7 +174,8 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                     isLoading = false,
                     skippedCount = current.skippedCount + skipped,
                     errorMessage = when {
-                        skipped > 0 && newPhotos.isEmpty() ->
+                        // 新しい写真が1枚も追加されなかった場合
+                        skipped > 0 && uris.size == skipped ->
                             "選択した写真に位置情報が含まれていません（${skipped}枚スキップ）"
                         skipped > 0 -> "${skipped}枚は位置情報なしのためスキップしました"
                         else -> null
