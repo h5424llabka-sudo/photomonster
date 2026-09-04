@@ -22,6 +22,7 @@ import java.util.Locale
 /** アプリの UI 状態 */
 data class MapUiState(
     val photos: List<PhotoLocation> = emptyList(),
+    val selectedCluster: List<PhotoLocation>? = null,
     val wildMonsters: List<com.photomonster.model.Monster> = emptyList(), // ゲーム仕様: 野生モンスター
     val encounteringMonster: com.photomonster.model.Monster? = null, // ゲーム仕様: 遭遇中（捕獲画面）のモンスター
     val caughtMonsters: List<com.photomonster.model.Monster> = emptyList(), // ゲーム仕様: 捕獲済みのモンスター（手持ち/図鑑）
