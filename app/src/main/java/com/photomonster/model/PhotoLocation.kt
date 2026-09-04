@@ -5,9 +5,8 @@ import com.google.android.gms.maps.model.LatLng
 
 /**
  * 位置情報付き写真のデータモデル
- * ※ClusterItem は不要になったため削除（独自クラスタリング実装に変更）
  *
- * @param id          一意ID（URIのhashCode）
+ * @param id          一意ID（uriString.hashCode() で安定したIDを生成）
  * @param uri         写真の Content URI
  * @param latLng      GPS 座標 (latitude, longitude)
  * @param timestamp   EXIF の撮影日時文字列（例: "2025:01:15 14:30:00"）
@@ -22,7 +21,10 @@ data class PhotoLocation(
     val address: String? = null,
     val lastCollectedTime: Long = 0L
 ) {
-    /** 表示用の撮影日時 */
+    /** URI文字列（安定したキー、Coilのキャッシュキーとして使用） */
+    val uriString: String get() = uri.toString()
+
+    /** 表示用の撮影日時（"2025:01:15 14:30:00" → "2025/01/15 14:30"） */
     val formattedTimestamp: String
         get() = timestamp
             ?.replaceFirst(":", "/")
@@ -36,7 +38,7 @@ data class PhotoLocation(
 
 /**
  * 半径200m以内の写真をグループ化したスポット
- * マップ上には1つのピンとして表示される
+ * マップ上には1つのピンとして表示される（ズームレベルに関係なく固定）
  */
 data class PhotoSpot(
     val id: String,
