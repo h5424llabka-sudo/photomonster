@@ -21,6 +21,5 @@ data class Monster(
     val hp: Int,
     val attack: Int,
     val defense: Int,
-    val spawnTime: Long = System.currentTimeMillis(),
-    val spotId: String = ""  // 生成元のフォトスポットID
+    val spawnTime: Long = System.currentTimeMillis()
 )
